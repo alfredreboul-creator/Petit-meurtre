@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Archives Criminelles — Interrogatoire Serré</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blood: #991b1b;
+    --paper: #f1f0ea;
+    --ink: #111827;
+  }
+  body { font-family: 'Courier Prime', monospace; background: #050505; color: #e5e7eb; overflow-x: hidden; }
+  .elite { font-family: 'Special Elite', serif; }
+  .folder { background: var(--paper); color: var(--ink); box-shadow: 12px 12px 0px #000; border: 1px solid #94a3b8; position: relative; }
+  .stamp { border: 5px solid var(--blood); color: var(--blood); padding: 5px 15px; text-transform: uppercase; font-weight: 900; transform: rotate(-12deg); display: inline-block; font-family: 'Special Elite'; font-size: 1.2rem; }
+  .btn-crime { background: var(--blood); border-bottom: 6px solid #450a0a; font-family: 'Special Elite'; transition: all 0.1s; cursor: pointer; }
+  .btn-crime:active { transform: translateY(3px); border-bottom-width: 3px; }
+  .calendar-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .calendar-day { aspect-ratio: 1/1; background: #111; border: 2px solid #222; display: flex; align-items: center; justify-content: center; font-family: 'Special Elite'; font-size: 1.4rem; cursor: pointer; transition: 0.3s; }
+  .calendar-day.selected { background: var(--blood); color: white; border-color: #ef4444; box-shadow: 0 0 20px var(--blood); transform: scale(1.1); z-index: 10; }
+  .line-paper { background-image: repeating-linear-gradient(transparent, transparent 31px, #d1d5db 31px, #d1d5db 32px); line-height: 32px; padding-left: 15px; }
+  .scroll-hide::-webkit-scrollbar { width: 0px; }
+  .role-choice { border: 2px solid #333; transition: 0.2s; cursor: pointer; }
+  .role-choice.active { border-color: var(--blood); background: #1a0505; }
+  .error-msg { background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; padding: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; display: none; }
+</style>
+</head>
+<body class="min-h-screen p-4 flex flex-col items-center">
+
+<!-- =====================================================
+     CONFIGURATION FIREBASE
+     =====================================================
+     1. Créez un projet sur https://console.firebase.google.com
+     2. Activez Firestore Database (mode test pour débuter)
+     3. Activez Authentication > Anonymous
+     4. Allez dans Paramètres du projet > Config SDK web
+     5. Remplacez les valeurs ci-dessous
+     ===================================================== -->
+
+<script>
+  const FIREBASE_CONFIG = {
+    apiKey:            "VOTRE_API_KEY",
+    authDomain:        "VOTRE_PROJECT.firebaseapp.com",
+    projectId:         "VOTRE_PROJECT_ID",
+    storageBucket:     "VOTRE_PROJECT.appspot.com",
+    messagingSenderId: "VOTRE_SENDER_ID",
+    appId:             "VOTRE_APP_ID"
+  };
+  const APP_ID = "crime-legacy-v1"; // Identifiant de l'app (libre)
+</script>
+
+<!-- HEADER -->
+
+<header class="w-full max-w-2xl border-b-8 border-red-900 pb-4 mb-10 flex justify-between items-end">
+  <div class="elite">
+    <h1 class="text-3xl font-bold text-red-700 uppercase tracking-tighter">Archives Criminelles</h1>
+    <p class="text-[9px] text-zinc-500 tracking-[0.4em] mt-1 font-bold">ACCÈS RESTREINT // SÉCURITÉ NATIONALE</p>
+  </div>
+  <div id="game-code-area" class="hidden text-right">
+    <span class="text-[8px] text-zinc-500 font-bold block uppercase">Code Dossier</span>
+    <span id="display-code" class="text-xl font-bold text-white font-mono bg-red-900/40 px-3 rounded tracking-widest border border-red-900/50">----</span>
+  </div>
+</header>
+
+<main id="app" class="w-full max-w-2xl">
+
+  <!-- LOADING -->
+
+  <div id="screen-loading" class="py-32 text-center elite animate-pulse text-red-800">
+    DÉCRYPTAGE DU DOSSIER EN COURS...
+  </div>
+
+  <!-- HOME -->
+
+  <div id="screen-home" class="hidden space-y-8">
+    <div class="folder p-10 space-y-8">
+      <div class="stamp">Identité</div>
+      <h3 class="elite text-2xl font-black underline decoration-red-800 decoration-4">Qui se présente ?</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <button id="pre-role-inv" onclick="preSelectRole(true)" class="role-choice p-4 flex flex-col items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">L'Inspecteur</span>
+          <span class="text-[10px] opacity-40 text-center italic">Celui qui interroge et dirige la PJ</span>
+        </button>
+        <button id="pre-role-pla" onclick="preSelectRole(false)" class="role-choice active p-4 flex flex-col items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">L'Accusé</span>
+          <span class="text-[10px] opacity-40 text-center italic">Celui qui va devoir mentir</span>
+        </button>
+      </div>
+      <div class="pt-6 border-t border-zinc-300">
+        <label class="block text-[10px] uppercase font-bold text-zinc-500 mb-2">Matricule ou Alias</label>
+        <input type="text" id="name-input" placeholder="Matricule..." class="w-full bg-white border-b-4 border-zinc-200 p-4 text-2xl font-bold outline-none focus:border-red-700 text-zinc-900">
+      </div>
+      <div id="home-error" class="error-msg">Renseignez votre matricule avant de continuer.</div>
+    </div>
+    <div class="grid gap-6">
+      <button onclick="createGame()" class="btn-crime w-full p-6 text-white text-2xl uppercase tracking-widest shadow-2xl">Ouvrir un Dossier</button>
+      <div class="flex gap-4">
+        <input type="text" id="code-input" placeholder="CODE" maxlength="4" class="bg-zinc-900 border border-zinc-700 w-32 p-5 text-center font-bold uppercase text-2xl text-white outline-none focus:border-red-700">
+        <button onclick="joinGame()" class="flex-grow bg-zinc-800 p-5 font-bold uppercase tracking-widest text-zinc-400">Rejoindre l'enquête</button>
+      </div>
+      <div id="join-error" class="error-msg">Code invalide ou partie introuvable.</div>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+
+  <div id="screen-lobby" class="hidden space-y-8">
+    <div id="role-status-card" class="bg-zinc-950 border-2 border-zinc-900 p-8 shadow-2xl">
+      <h2 id="lobby-role-display" class="elite text-3xl font-black mb-1 uppercase">---</h2>
+      <p id="lobby-role-desc" class="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">---</p>
+    </div>
+    <div class="bg-black/50 p-6 border border-zinc-900">
+      <h3 class="text-[10px] text-zinc-600 uppercase font-bold mb-4 tracking-widest">Unités et Suspects présents :</h3>
+      <div id="player-list" class="space-y-4 font-mono text-sm"></div>
+    </div>
+    <!-- HOST ZONE -->
+    <div id="host-zone" class="hidden space-y-8 pt-6 border-t-4 border-red-900 text-center">
+      <div class="folder p-8 text-left">
+        <h3 class="elite text-red-900 font-bold mb-6 text-xl underline underline-offset-8">Calendrier de la Déchéance</h3>
+        <div id="calendar" class="calendar-grid"></div>
+      </div>
+      <button onclick="publishBriefing()" id="btn-briefing" class="btn-crime w-full p-6 text-white text-2xl uppercase shadow-2xl">Diffuser le Rapport de Crime</button>
+    </div>
+    <!-- PLAYER ZONE -->
+    <div id="player-zone" class="hidden text-center py-10 bg-zinc-900/30 rounded-xl border border-zinc-800">
+      <p class="text-[10px] text-red-800 font-bold uppercase animate-pulse mb-2">Attention : dossier en cours d'ouverture</p>
+      <p class="text-[9px] text-zinc-500 uppercase tracking-widest">Le Commissaire sélectionne une affaire... Soyez prêt.</p>
+    </div>
+  </div>
+
+  <!-- BRIEFING -->
+
+  <div id="screen-briefing" class="hidden space-y-8">
+    <div class="folder p-10 space-y-8 shadow-2xl max-h-[85vh] overflow-y-auto scroll-hide">
+      <div class="flex justify-between items-start">
+        <div class="stamp">Preuve A</div>
+        <span id="briefing-day" class="elite text-red-800 text-3xl font-black underline">JOUR --</span>
+      </div>
+      <h2 id="briefing-title" class="text-3xl font-black uppercase border-b-4 border-black pb-2 leading-tight"></h2>
+      <div class="space-y-6 pt-4">
+        <h3 class="bg-black text-white px-3 py-1 text-[10px] font-bold uppercase inline-block">Rapport d'Enquête Détaillé :</h3>
+        <p id="briefing-desc" class="text-sm leading-relaxed text-justify first-letter:text-6xl first-letter:font-black first-letter:float-left first-letter:mr-3 first-letter:leading-none text-zinc-900 italic"></p>
+      </div>
+      <div id="host-briefing-controls" class="hidden pt-12 border-t border-black/10">
+        <div class="text-center mb-4"><span class="stamp" style="font-size:0.8rem;transform:none;border-width:2px;">Action Requise</span></div>
+        <button onclick="launchInvestigation()" class="btn-crime w-full p-6 text-white text-xl uppercase tracking-widest">Lancer l'Interrogatoire</button>
+      </div>
+      <div id="player-briefing-msg" class="hidden pt-12 text-center space-y-6 border-t border-black/10">
+        <div class="stamp" style="border-width:2px;font-size:0.9rem;transform:rotate(0deg);color:#111;border-color:#111;">INTERROGATOIRE IMMINENT</div>
+        <p class="text-[11px] text-red-900 font-bold uppercase italic leading-relaxed">
+          Le Commissaire examine vos alibis...<br>Préparez votre défense, vous allez être passé à la question.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME -->
+
+  <div id="screen-game" class="hidden space-y-8">
+    <div class="flex justify-between items-center border-b-2 border-red-900 pb-6">
+      <div>
+        <div id="timer" class="text-7xl font-bold tracking-tighter text-white tabular-nums leading-none">01:30</div>
+        <div id="round-label" class="inline-block mt-2 bg-red-900 px-3 py-1 text-[10px] font-bold text-white uppercase tracking-widest">PHASE 1 : MISE EN ACCUSATION</div>
+      </div>
+      <div class="text-right elite text-red-700 text-4xl font-black" id="game-day-tag">--</div>
+    </div>
+
+```
+<!-- VIEW: ENQUETEUR -->
+<div id="view-enqueteur" class="hidden space-y-8">
+  <div class="folder p-10 space-y-8 max-h-[70vh] overflow-y-auto scroll-hide shadow-inner">
+    <div class="stamp">Vérité Nue</div>
+    <h3 class="bg-black text-white px-2 py-1 text-[10px] font-bold uppercase inline-block">Tableau des Suspects (Confidentiel) :</h3>
+    <div id="investigator-data" class="space-y-12"></div>
+  </div>
+  <!-- BUG FIX: was "hidden flex" causing conflict — now correctly toggled via JS -->
+  <div id="host-game-controls" class="hidden gap-4">
+    <button id="btn-next" onclick="nextRound()" class="flex-grow btn-crime p-5 text-white font-bold uppercase text-sm shadow-xl">Tour 2 : Confrontation</button>
+    <button onclick="reset()" class="bg-zinc-900 border border-zinc-800 p-5 text-[10px] font-bold uppercase text-zinc-500 active:scale-95">Classer l'Affaire</button>
+  </div>
+</div>
+
+<!-- VIEW: ACCUSÉ -->
+<div id="view-joueur" class="hidden space-y-8">
+  <div class="folder p-10 relative min-h-[500px] shadow-2xl">
+    <div class="absolute top-6 right-6 opacity-30 stamp">Accusé</div>
+    <div class="mb-12">
+      <span class="text-[10px] uppercase font-bold opacity-50 block mb-1">Status Judiciaire :</span>
+      <h2 id="player-role" class="text-5xl font-black uppercase tracking-tight leading-none">---</h2>
+    </div>
+    <div class="space-y-4 mb-12">
+      <h3 class="text-[10px] font-bold uppercase border-b-4 border-red-900 pb-1 text-red-900 tracking-widest">Procès-Verbal d'Interpellation :</h3>
+      <p id="player-motif" class="text-sm leading-relaxed text-zinc-900 line-paper pt-2 font-bold italic"></p>
+    </div>
+    <div class="space-y-6">
+      <h3 id="word-title" class="text-[11px] font-bold uppercase border-b-2 border-black/20 pb-1 text-red-900 tracking-widest">Éléments de langage à caler :</h3>
+      <div id="player-words" class="grid gap-4"></div>
+    </div>
+  </div>
+</div>
+```
+
+  </div>
+
+</main>
+
+<script type="module">
+import { initializeApp }              from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+// ── Init Firebase ──────────────────────────────────────────
+const app  = initializeApp(FIREBASE_CONFIG);
+const db   = getFirestore(app);
+const auth = getAuth(app);
+
+// ── State ─────────────────────────────────────────────────
+let user            = null;
+let gameId          = null;
+let isHost          = false;
+let timerInt        = null;
+let selectedDay     = 1;
+let preSelectedRoleIsInv = false;
+let unsubscribe     = null;
+
+// ── Scenarios ─────────────────────────────────────────────
+const generateScenarios = () => {
+  const data = [
+    {
+      t: "L'Attentat à la Mousse de Canard Explosive",
+      d: "Le 12 Janvier, à la réception annuelle de l'Ambassade de Groland, un buffet de charcuterie fine a littéralement dévasté la salle de bal. Le coupable aurait dissimulé un mélange instable de nitroglycérine et de graisse de canard dans une terrine de foie gras millésimée. L'explosion a été si puissante qu'on a retrouvé des cornichons incrustés dans les tableaux de maîtres à plus de 50 mètres de distance, certains ayant même traversé des fenêtres blindées. Le mobile ? Une vengeance suite à une dégustation de pâté de campagne jugée 'insultante' par un terroriste culinaire membre du gang des Goulus, qui ne supportait pas que le sel soit remplacé par de la fleur de Guérande bas de gamme.",
+      wI: ["Terrine","Cornichon","Buffet"],  wI2: ["Pâté","Foie Gras"],
+      wG: ["Nitrate","Vengeance","Gavage"],  wG2: ["Poudre","Sabotage"],
+      susp: [
+        "Monsieur, le rapport de police mentionne que vous avez été aperçu près du buffet à 19h58 précises, tenant une cuillère en argent d'un air extrêmement nerveux. Un témoin affirme vous avoir entendu murmurer 'Ça va être gras, très gras' avant de reculer vers la sortie de secours. On a retrouvé des traces de soufre sur votre serviette brodée et vos doigts sentent étrangement le canard confit. Qu'aviez-vous à faire près du foie gras ?",
+        "En tant que goûteur officiel de l'Ambassade, pourquoi avez-vous subitement refusé de toucher à la mousse de canard juste avant la détonation ? Un ticket de caisse pour l'achat de 2kg de poudre noire et d'un détonateur électrique a été retrouvé dans votre poche de costume de gala. Expliquez aussi pourquoi vous portiez des lunettes de protection sous votre masque de bal ?",
+        "Votre tablier de service présente des résidus de combustion lente et une tache de graisse de canard de type 'Sud-Ouest'. Le chef cuisinier affirme que vous n'avez jamais quitté le garde-manger durant toute la soirée, pourtant vous étiez absent lors de l'appel de 20h. Pourquoi aviez-vous un détonateur caché dans votre chaussette gauche lors de la fouille ? Parlez !"
+      ]
+    },
+    {
+      t: "Le Massacre des Mimes Silencieux",
+      d: "Le 22 Mars, le Festival International du Mime de Strasbourg a tourné au drame national. 12 artistes de renommée mondiale ont été retrouvés enfermés dans des boîtes invisibles qui étaient, pour le coup, tout à fait réelles et faites de plaques de plexiglas blindé de 4cm d'épaisseur. Les victimes ont failli mourir d'asphyxie en essayant de mimer qu'ils ne pouvaient plus respirer, ce que le public a applaudi pendant 20 minutes. On soupçonne un ancien clown reconverti dans la sécurité privée, traumatisé par le silence pesant de ses collègues mimes.",
+      wI: ["Maquillage","Geste","Silence"],  wI2: ["Rideau","Applaudissement"],
+      wG: ["Asphyxie","Plexiglas","Vengeance"], wG2: ["Oxygène","Outil"],
+      susp: [
+        "Suspect, expliquez pourquoi la police a retrouvé 40 plaques de plexiglas haute résistance dans votre garage. Vous avez été flashé par un radar urbain en train de transporter une boîte transparente géante sur le toit de votre voiture à 4h du matin. Vos explications sur un 'aquarium pour baleine imaginaire' ne tiennent pas une seconde.",
+        "Un témoin vous a entendu dire 'Ils vont enfin la boucler pour de bon' lors de la répétition générale. Vos mains sont couvertes de résidus de colle forte industrielle. Pourquoi portiez-vous un nez rouge en plastique sous votre masque anti-gaz lors de votre interpellation dans les coulisses ?",
+        "Votre badge d'accès a été utilisé pour verrouiller la salle des mimes exactement 3 minutes avant le début du massacre. Vous prétendez être sourd-muet pour échapper à l'interrogatoire, mais on vous a entendu hurler de rire dans les vestiaires juste après l'incident. Où avez-vous acheté le plexiglas ?"
+      ]
+    },
+    {
+      t: "Le Vol du Brie de Meaux Présidentiel",
+      d: "Dans la nuit du 3 au 4 Septembre, la cave à fromages de l'Élysée a été cambriolée avec une sophistication terrifiante. La pièce maîtresse de la collection — un Brie de Meaux affiné 47 ans, estampillé 'Patrimoine de la République' — a disparu. Le voleur a neutralisé 14 caméras de sécurité en projetant dessus de la crème fraîche, contourné les lasers grâce à des miroirs en fromage de chèvre séché ultra-réfléchissant, et désarmé le garde en lui faisant sentir un Époisse en phase terminale de fermentation.",
+      wI: ["Affinage","Croûte","Cave"],      wI2: ["Dégustation","Terroir"],
+      wG: ["Cambriolage","Crème","Miroir"],  wG2: ["Alarme","Neutraliser"],
+      susp: [
+        "Votre carte bancaire a été utilisée pour acheter 3 litres de crème fraîche épaisse à 23h47 la veille du vol. Vous êtes également fichier à l'Office des Fraudes Fromagères pour une affaire de Camembert synthétique en 2019. Pourquoi votre manteau sent-il la cave humide et l'Époisse fermenté ?",
+        "Des traces ADN de Brie ont été retrouvées sous vos ongles lors de la garde à vue. Vous êtes le seul visiteur à avoir demandé à voir la cave à fromages lors de la visite protocolaire du mois dernier. Expliquez la présence d'un plan annoté de la cave sous votre matelas.",
+        "Votre voiture de fonction présente des traces de roue dans le gazon de l'Élysée côté nord. Le chien renifleur de l'unité fromagère spéciale a tiré directement vers vous à la parade. Un miroir de chèvre séché a été retrouvé dans votre coffre."
+      ]
+    },
+    {
+      t: "L'Empoisonnement au Café de la Sous-Préfecture",
+      d: "Le Mardi 7 Novembre, une panne catastrophique a frappé la machine à café Nespresso Premium de la Sous-Préfecture de Vierzon. Quelqu'un avait remplacé les capsules de Ristretto par des gélules contenant un mélange de chicorée périmée, de marc de café des années 80 et d'une substance encore non identifiée qui provoque des réunions interminables, une propension à utiliser PowerPoint et une incapacité totale à prendre des décisions avant 17h30.",
+      wI: ["Capsule","Expresso","Mouture"],  wI2: ["Percolateur","Crema"],
+      wG: ["Chicorée","Sabotage","Gélule"],  wG2: ["Intoxication","Dosette"],
+      susp: [
+        "Vous êtes le seul agent à avoir refusé de boire le café ce matin-là, prétextant un 'régime décaféiné subitement adopté'. On vous a vu rôder près de la machine à 7h34, soit 23 minutes avant l'ouverture officielle des locaux. Vos poubelles contenaient 47 capsules vides et un mode d'emploi de préparation de chicorée concentrée.",
+        "Le service de nettoyage vous a vu transporter un sac isotherme suspect vers le local café la veille au soir. Votre bilan de compétences mentionne une certification en 'manipulation des fluides caféinés'. Pourquoi portiez-vous des gants de chirurgien pour faire des photocopies ce matin ?",
+        "Votre code d'accès badgé a été utilisé à 23h12 la veille pour entrer dans le bâtiment. La liste de vos congés montre que vous étiez absent chaque fois qu'une réunion kafkaïenne a duré plus de 4 heures ces six derniers mois. Le laboratoire a identifié vos empreintes sur la cartouche de réserve."
+      ]
+    },
+    {
+      t: "La Grande Escroquerie au Pétanque de Monaco",
+      d: "Lors du prestigieux Tournoi International de Pétanque Royale de Monaco, le 15 Juillet, un scandale sans précédent a éclaté : les boules de cochonnet avaient été remplacées par des leurres holographiques télécommandés. Le coupable, depuis les tribunes, déplaçait les cochonnets à distance pour faire perdre les favorites et encaisser des mises colossales auprès de bookmakers clandestins basés à Andorre. La technique était si sophistiquée que même les arbitres laser n'ont rien détecté pendant 3 heures.",
+      wI: ["Cochonnet","Pointeur","Mèle"],   wI2: ["Terrain","Boule"],
+      wG: ["Hologramme","Télécommande","Mise"], wG2: ["Arnaque","Clandestin"],
+      susp: [
+        "Votre téléphone portable a émis des signaux Bluetooth à haute fréquence tout au long du tournoi, captés par nos analystes. On vous a photographié en train de manipuler ce qui ressemble à une télécommande dissimulée dans un programme officiel. Pourquoi avez-vous misé 80 000 euros sur le perdant à 1 contre 47 ?",
+        "Vous êtes ingénieur en holographie chez une filiale de la ESA et votre badge professionnel vous donne accès à du matériel de projection miniaturisé classifié. Un virement de 340 000 euros d'un compte andorran a été crédité sur votre compte le lendemain du tournoi. Expliquez.",
+        "Des traces de résine holographique ont été retrouvées sous vos chaussures de sport. Votre casier judiciaire mentionne une tentative d'escroquerie lors du Concours de Boules de Béziers 2018. La police monégasque a retrouvé votre empreinte sur le générateur holographique dans la remise du club."
+      ]
+    },
+    {
+      t: "Le Détournement du Carnaval de Nice",
+      d: "Le 20 Février, lors du grand défilé du Carnaval de Nice, le char officiel du Roi Carnaval a mystérieusement changé d'itinéraire pour se retrouver à l'entrée de la Banque Régionale de la Côte d'Azur. Le conducteur, sous hypnose selon ses dires, a enfoncé le portail avec 12 tonnes de papier mâché peint à l'effigie du Roi. Pendant la confusion carnavalesque et les confettis, un commando masqué en costumes de grosses têtes caricaturales a tenté de vider les coffres. L'opération a échoué car ils ne pouvaient pas voir à travers les masques.",
+      wI: ["Confetti","Costume","Défilé"],   wI2: ["Fanfare","Masque"],
+      wG: ["Casse","Hypnose","Commando"],    wG2: ["Coffre","Papier-mâché"],
+      susp: [
+        "Votre nom apparaît sur la liste des artisans ayant travaillé sur le char du Roi Carnaval. Un manuel d'hypnose rapide et les coordonnées GPS de la banque ont été retrouvés dans votre atelier. Pourquoi avez-vous réservé un minibus de 9 places sous un faux nom pour le soir du carnaval ?",
+        "Votre casier mentionne une affaire de grande tête caricaturale frauduleuse lors du carnaval de Dunkerque. Des résidus de papier mâché identiques au char ont été retrouvés dans votre camionnette. Vos empreintes digitales ont été relevées sur le gouvernail de direction du char.",
+        "Vous avez acheté 47 masques de grosses têtes en janvier dernier, soit beaucoup plus que pour votre atelier de carnaval déclaré. Un virement important d'une société écran basée aux Îles Caïmans a été reçu deux jours avant le défilé. La banque dispose d'une vidéo vous montrant repérer les lieux trois semaines avant les faits."
+      ]
+    }
+  ];
+  const list = [];
+  for (let i = 1; i <= 30; i++) {
+    const b = data[(i - 1) % data.length];
+    list.push({
+      day: i, title: b.t, desc: b.d,
+      innocentWords: b.wI, innocentWords2: b.wI2,
+      guiltyWords: b.wG, guiltyWords2: b.wG2,
+      suspicionBases: b.susp
+    });
+  }
+  return list;
+};
+const ALL_CASES = generateScenarios();
+
+// ── Helpers ───────────────────────────────────────────────
+const show = (id) => {
+  ['loading','home','lobby','briefing','game'].forEach(s =>
+    document.getElementById('screen-'+s).classList.add('hidden')
+  );
+  document.getElementById('screen-'+id).classList.remove('hidden');
+  document.getElementById('game-code-area').classList.toggle('hidden', id === 'home' || id === 'loading');
+};
+
+const showError = (id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+};
+
+// ── Auth ──────────────────────────────────────────────────
+signInAnonymously(auth).catch(err => console.error("Auth error:", err));
+onAuthStateChanged(auth, u => {
+  if (u) { user = u; show('home'); }
+});
+
+// ── Role pre-select ───────────────────────────────────────
+window.preSelectRole = (isInv) => {
+  preSelectedRoleIsInv = isInv;
+  document.getElementById('pre-role-inv').classList.toggle('active', isInv);
+  document.getElementById('pre-role-pla').classList.toggle('active', !isInv);
+};
+
+// ── Create game ───────────────────────────────────────────
+window.createGame = async () => {
+  const name = document.getElementById('name-input').value.trim();
+  if (!name) { showError('home-error'); return; }
+  const code = Math.random().toString(36).substring(2,6).toUpperCase();
+  gameId = code; isHost = true;
+  await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', code), {
+    id: code, hostId: user.uid, status: 'lobby',
+    players: [{ id: user.uid, name, isInvestigator: preSelectedRoleIsInv }],
+    caseIndex: 0, currentRound: 1
+  });
+  listenGame(code);
+};
+
+// ── Join game ─────────────────────────────────────────────
+window.joinGame = async () => {
+  const name = document.getElementById('name-input').value.trim();
+  const code = document.getElementById('code-input').value.trim().toUpperCase();
+  if (!name) { showError('home-error'); return; }
+  if (!code) { showError('join-error'); return; }
+  try {
+    const ref  = doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', code);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) { showError('join-error'); return; }
+    const d = snap.data();
+    if (!d.players.find(p => p.id === user.uid)) {
+      d.players.push({ id: user.uid, name, isInvestigator: preSelectedRoleIsInv });
+      await updateDoc(ref, { players: d.players });
+    }
+    gameId = code;
+    listenGame(code);
+  } catch(e) {
+    console.error(e);
+    showError('join-error');
+  }
+};
+
+// ── Realtime listener ─────────────────────────────────────
+const listenGame = (code) => {
+  document.getElementById('display-code').innerText = code;
+  if (unsubscribe) unsubscribe();
+  unsubscribe = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', code), snap => {
+    if (snap.exists()) render(snap.data());
+  });
+};
+
+// ── Render ────────────────────────────────────────────────
+const render = (data) => {
+  const me = data.players.find(p => p.id === user.uid);
+  if (!me) return;
+
+  // ── LOBBY ──
+  if (data.status === 'lobby') {
+    show('lobby');
+    document.getElementById('lobby-role-display').innerText = me.isInvestigator ? "L'Inspecteur" : "L'Accusé";
+    document.getElementById('lobby-role-desc').innerText    = me.isInvestigator ? "Commissariat — Direction" : "Mise en examen — Salle d'attente";
+    document.getElementById('player-list').innerHTML = data.players.map(p => `
+      <div class="flex justify-between items-center bg-zinc-900 border-l-4 ${p.isInvestigator ? 'border-red-800' : 'border-zinc-700'} p-4">
+        <span class="font-black text-zinc-300 tracking-wider">> ${p.name.toUpperCase()}</span>
+        <span class="text-[8px] font-bold px-3 py-1 bg-black tracking-[0.2em] border ${p.isInvestigator ? 'border-red-900 text-red-600' : 'border-zinc-800 text-zinc-600'}">
+          ${p.isInvestigator ? 'POLICE' : 'SUSPECT'}
+        </span>
+      </div>
+    `).join('');
+
+    const isMyHost = data.hostId === user.uid;
+    document.getElementById('host-zone').classList.toggle('hidden', !isMyHost);
+    document.getElementById('player-zone').classList.toggle('hidden', isMyHost);
+
+    // Build calendar (once)
+    if (isMyHost) {
+      const grid = document.getElementById('calendar');
+      if (grid.children.length === 0) {
+        for (let i = 1; i <= 30; i++) {
+          const d = document.createElement('div');
+          d.className = `calendar-day ${selectedDay === i ? 'selected' : ''}`;
+          d.innerText = i;
+          d.onclick = () => {
+            selectedDay = i;
+            [...grid.children].forEach(c => c.classList.remove('selected'));
+            d.classList.add('selected');
+          };
+          grid.appendChild(d);
+        }
+      }
+    }
+  }
+
+  // ── BRIEFING ──
+  if (data.status === 'briefing') {
+    show('briefing');
+    const sc = ALL_CASES[data.caseIndex];
+    document.getElementById('briefing-day').innerText  = `JOUR ${sc.day}`;
+    document.getElementById('briefing-title').innerText = sc.title;
+    document.getElementById('briefing-desc').innerText  = sc.desc;
+    document.getElementById('host-briefing-controls').classList.toggle('hidden', data.hostId !== user.uid);
+    document.getElementById('player-briefing-msg').classList.toggle('hidden', data.hostId === user.uid);
+  }
+
+  // ── PLAYING ──
+  if (data.status === 'playing') {
+    show('game');
+    const sc = ALL_CASES[data.caseIndex];
+    document.getElementById('game-day-tag').innerText  = `J.${sc.day}`;
+    document.getElementById('round-label').innerText   = `Interrogatoire : Tour ${data.currentRound}`;
+
+    const amHost = data.hostId === user.uid;
+    // BUG FIX: correctly show/hide host controls with flex display
+    const hostCtrl = document.getElementById('host-game-controls');
+    if (amHost) {
+      hostCtrl.classList.remove('hidden');
+      hostCtrl.style.display = 'flex';
+    } else {
+      hostCtrl.classList.add('hidden');
+      hostCtrl.style.display = '';
+    }
+
+    if (me.isInvestigator) {
+      document.getElementById('view-enqueteur').classList.remove('hidden');
+      document.getElementById('view-joueur').classList.add('hidden');
+
+      // Show/hide "next round" button
+      document.getElementById('btn-next').classList.toggle('hidden', data.currentRound === 2);
+
+      document.getElementById('investigator-data').innerHTML = data.players
+        .filter(p => !p.isInvestigator)
+        .map(p => `
+          <div class="border-l-8 border-black pl-6 space-y-3">
+            <div class="flex justify-between font-black uppercase border-b-2 border-black/10">
+              <span>${p.name}</span>
+              <span class="${p.role === 'Coupable' ? 'text-red-700 underline' : 'text-zinc-400'}">${p.role || '?'}</span>
+            </div>
+            <div class="text-[10px] italic leading-tight text-zinc-600">PV DE SOUPÇON : "${p.suspicion || ''}"</div>
+            <div class="text-[11px] font-bold">
+              <span class="bg-black text-white px-1">MOTS T1:</span> ${(p.words || []).join(' / ')}
+              ${data.currentRound === 2 ? '<br/><span class="bg-red-800 text-white px-1">MOTS T2:</span> ' + (p.words2 || []).join(' / ') : ''}
+            </div>
+          </div>
+        `).join('');
+    } else {
+      document.getElementById('view-enqueteur').classList.add('hidden');
+      document.getElementById('view-joueur').classList.remove('hidden');
+
+      const playerRoleEl = document.getElementById('player-role');
+      playerRoleEl.innerText    = me.role || '?';
+      playerRoleEl.style.color  = me.role === 'Coupable' ? '#991b1b' : '#1e293b';
+      document.getElementById('player-motif').innerText = me.suspicion || '';
+
+      const words = data.currentRound === 1
+        ? (me.words  || [])
+        : [...(me.words || []), ...(me.words2 || [])];
+      document.getElementById('word-title').innerText = `Éléments de langage à placer (Tour ${data.currentRound}) :`;
+      document.getElementById('player-words').innerHTML = words.map(w => `
+        <div class="bg-white p-5 border-l-8 border-red-900 shadow-sm font-black text-2xl uppercase tracking-tighter">${w}</div>
+      `).join('');
+    }
+
+    // Timer
+    if (timerInt) clearInterval(timerInt);
+    timerInt = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - data.startTime) / 1000);
+      const rem = Math.max(0, 90 - elapsed);
+      const timerEl = document.getElementById('timer');
+      if (timerEl) {
+        timerEl.innerText = `${Math.floor(rem/60).toString().padStart(2,'0')}:${(rem%60).toString().padStart(2,'0')}`;
+      }
+      if (rem === 0) clearInterval(timerInt);
+    }, 1000);
+  }
+};
+
+// ── Host actions ──────────────────────────────────────────
+window.publishBriefing = async () => {
+  await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', gameId), {
+    status: 'briefing', caseIndex: selectedDay - 1
+  });
+};
+
+window.launchInvestigation = async () => {
+  const ref      = doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', gameId);
+  const d        = (await getDoc(ref)).data();
+  const sc       = ALL_CASES[d.caseIndex];
+  const suspects = d.players.filter(p => !p.isInvestigator);
+  const gId      = suspects[Math.floor(Math.random() * suspects.length)]?.id;
+
+  const players = d.players.map(p => {
+    if (p.isInvestigator) return { ...p, role: 'Enquêteur', words: [], words2: [], suspicion: '' };
+    const isG  = p.id === gId;
+    const pIdx = suspects.findIndex(s => s.id === p.id);
+    return {
+      ...p,
+      role:      isG ? 'Coupable' : 'Innocent',
+      words:     isG ? sc.guiltyWords    : sc.innocentWords,
+      words2:    isG ? sc.guiltyWords2   : sc.innocentWords2,
+      suspicion: sc.suspicionBases[pIdx % sc.suspicionBases.length]
+    };
+  });
+
+  await updateDoc(ref, { status: 'playing', players, currentRound: 1, startTime: Date.now() });
+};
+
+window.nextRound = async () => {
+  await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', gameId), {
+    currentRound: 2, startTime: Date.now()
+  });
+};
+
+window.reset = async () => {
+  if (timerInt) { clearInterval(timerInt); timerInt = null; }
+  await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'games', gameId), { status: 'lobby' });
+};
+</script>
+
+</body>
+</html>
